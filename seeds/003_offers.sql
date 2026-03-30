@@ -1,0 +1,1 @@
+﻿-- Default offers: FIRST20, REFER100
