@@ -7,6 +7,8 @@ import ratingRoutes from './rating.routes';
 import reportRoutes from './service-report.routes';
 import offerRoutes from './offer.routes';
 import preferenceRoutes from './preference.routes';
+import bookingRoutes from './booking.routes';
+app.use('/api/v1/bookings', bookingRoutes);
 
 const router = Router();
 
