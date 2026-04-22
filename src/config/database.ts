@@ -38,7 +38,7 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
       logger.warn('Slow query detected', {
         query: text.substring(0, 200),
         duration: `${duration}ms`,
-        rows: result.rowCount,
+        rows: result.rowCount ?? 0,
       });
     }
 
@@ -47,17 +47,20 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
       logger.debug('Query executed', {
         query: text.substring(0, 100),
         duration: `${duration}ms`,
-        rows: result.rowCount,
+        rows: result.rowCount ?? 0,
       });
     }
 
     return result;
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const err = error as { message?: string; code?: string };
     logger.error('Database query failed', {
       query: text.substring(0, 200),
-      params: params?.map((p) => (typeof p === 'string' && p.length > 50 ? p.substring(0, 50) + '...' : p)),
-      error: error.message,
-      code: error.code,
+      params: params?.map((p) =>
+        typeof p === 'string' && p.length > 50 ? p.substring(0, 50) + '...' : p,
+      ),
+      error: err?.message,
+      code: err?.code,
     });
     throw error;
   }
@@ -124,6 +127,21 @@ export function getPoolStats() {
     idleCount: pool.idleCount,
     waitingCount: pool.waitingCount,
   };
+}
+
+// ── Connect / disconnect (used by server.ts bootstrap) ─────────────────────
+export async function connectDatabase(): Promise<void> {
+  // Ping once to surface bad credentials / network at startup instead of on
+  // first request. Uses the same pool — no standalone connection created.
+  const healthy = await dbHealthCheck();
+  if (!healthy) {
+    throw new Error('Database health check failed at startup');
+  }
+  logger.info('Database connection established');
+}
+
+export async function disconnectDatabase(): Promise<void> {
+  await closePool();
 }
 
 // ── Graceful shutdown ───────────────────────────────────────────────────────

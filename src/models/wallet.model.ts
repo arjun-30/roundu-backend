@@ -11,6 +11,13 @@ export interface Wallet {
   updated_at: Date;
 }
 
+// pg returns NUMERIC columns as strings by default. Normalize to numbers so
+// callers doing arithmetic don't get string concatenation bugs.
+function normalize(row: Wallet | { balance: number | string } | undefined): Wallet | undefined {
+  if (!row) return undefined;
+  return { ...(row as Wallet), balance: Number((row as { balance: number | string }).balance) };
+}
+
 export class WalletModel {
   constructor(private db: Pool) {}
 
@@ -19,7 +26,7 @@ export class WalletModel {
       `SELECT * FROM wallets WHERE user_id = $1`,
       [userId]
     );
-    return result.rows[0] ?? null;
+    return normalize(result.rows[0]) ?? null;
   }
 
   async findById(id: string): Promise<Wallet | null> {
@@ -27,7 +34,7 @@ export class WalletModel {
       `SELECT * FROM wallets WHERE id = $1`,
       [id]
     );
-    return result.rows[0] ?? null;
+    return normalize(result.rows[0]) ?? null;
   }
 
   async create(userId: string, currency = 'INR'): Promise<Wallet> {
@@ -37,7 +44,7 @@ export class WalletModel {
        RETURNING *`,
       [userId, currency]
     );
-    return result.rows[0];
+    return normalize(result.rows[0])!;
   }
 
   /**
@@ -52,7 +59,7 @@ export class WalletModel {
        RETURNING *`,
       [userId]
     );
-    return result.rows[0];
+    return normalize(result.rows[0])!;
   }
 
   /**
@@ -73,7 +80,7 @@ export class WalletModel {
       [userId, amountPaise]
     );
     if (!result.rows[0]) throw new Error(`Wallet not found for user ${userId}`);
-    return result.rows[0];
+    return normalize(result.rows[0])!;
   }
 
   /**
@@ -95,14 +102,15 @@ export class WalletModel {
     if (!result.rows[0]) {
       throw new Error('Insufficient wallet balance');
     }
-    return result.rows[0];
+    return normalize(result.rows[0])!;
   }
 
   async getBalance(userId: string): Promise<number> {
-    const result = await this.db.query<{ balance: number }>(
+    const result = await this.db.query<{ balance: number | string }>(
       `SELECT balance FROM wallets WHERE user_id = $1`,
       [userId]
     );
-    return result.rows[0]?.balance ?? 0;
+    const raw = result.rows[0]?.balance;
+    return raw === undefined || raw === null ? 0 : Number(raw);
   }
 }

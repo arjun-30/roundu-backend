@@ -7,11 +7,17 @@ import { verifyAccessToken, AccessTokenPayload } from "../utils/jwt";
 import { Errors } from "./errorHandler";
 
 // ── Augment Express Request ───────────────────────────────────────────────────
+// Controllers originally written against `req.user.id`; JWT payload uses `sub`.
+// Expose both shapes so old and new code keep working.
+
+export interface AuthedUser extends AccessTokenPayload {
+  id: string; // alias for `sub`
+}
 
 declare global {
   namespace Express {
     interface Request {
-      user: AccessTokenPayload;
+      user: AuthedUser;
     }
   }
 }
@@ -28,7 +34,8 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
   const token = authHeader.slice(7);
 
   try {
-    req.user = verifyAccessToken(token);
+    const payload = verifyAccessToken(token);
+    req.user = { ...payload, id: payload.sub };
     next();
   } catch (err) {
     if (err instanceof TokenExpiredError) {

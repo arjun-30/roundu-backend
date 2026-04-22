@@ -100,21 +100,30 @@ export function errorHandler(
     err instanceof Error &&
     "code" in err &&
     typeof (err as DbError).code === "string" &&
-    (err as DbError).code!.match(/^\d{5}$/)
+    // Postgres SQLSTATE codes are 5 alphanumeric chars (e.g. 22P02, 23505)
+    (err as DbError).code!.match(/^[0-9A-Z]{5}$/)
   ) {
     appError = formatDbError(err as DbError);
+  } else if (
+    err instanceof Error &&
+    "statusCode" in err &&
+    typeof (err as { statusCode?: unknown }).statusCode === "number"
+  ) {
+    // Services throw plain errors with statusCode/code attached — normalize.
+    const e = err as Error & { statusCode: number; code?: string; details?: Record<string, unknown> };
+    appError = new AppError(e.statusCode, e.code ?? "ERROR", e.message, e.details);
   } else {
     // Unknown — log fully, surface safely
-    logger.error({ err, path: req.path, method: req.method }, "Unhandled error");
+    logger.error("Unhandled error", { err, path: req.path, method: req.method });
     appError = Errors.internal();
   }
 
   // Log 5xx errors with stack in dev
   if (appError.statusCode >= 500) {
-    logger.error(
-      { statusCode: appError.statusCode, path: req.path },
-      appError.message
-    );
+    logger.error(appError.message, {
+      statusCode: appError.statusCode,
+      path: req.path,
+    });
     if (isDev && err instanceof Error) {
       console.error(err.stack);
     }

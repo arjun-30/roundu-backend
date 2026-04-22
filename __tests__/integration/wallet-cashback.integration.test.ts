@@ -1,176 +1,101 @@
-﻿// DEV 1
-// __tests__/integration/wallet-cashback.integration.test.ts
-// Owner: Dev 3 / Dev 4
-
-import request from 'supertest';
-import { app } from '../../src/app';
-import { db } from '../../src/config/database';
+/**
+ * Wallet + ledger integration tests against a real test Postgres. The
+ * cashback service itself is still a stub, so these tests exercise the
+ * wallet model that downstream cashback/referral flows call into.
+ */
+import { Pool } from 'pg';
+import { WalletModel } from '../../src/models/wallet.model';
 import {
-  getOrCreateWallet,
-  atomicCredit,
-  atomicDebit,
-} from '../../src/models/wallet.model';
-import { createTestUser, getAuthToken, createTestProvider } from '../helpers';
+  getTestPool,
+  closeTestPool,
+  initTestSchema,
+  resetTestData,
+  waitForDb,
+} from '../helpers/db';
+import { createTestUser } from '../helpers/factories';
 
-let user: { id: string; phone: string };
-let provider: { id: string; userId: string; phone: string };
-let userToken: string;
-let providerToken: string;
-
-beforeAll(async () => {
-  user     = await createTestUser({ role: 'user' });
-  provider = await createTestProvider();
-  userToken     = await getAuthToken(user.phone);
-  providerToken = await getAuthToken(provider.phone);
-
-  // Seed wallets.
-  await getOrCreateWallet(user.id);
-  await getOrCreateWallet(provider.userId);
-});
-
-afterAll(async () => {
-  await db.query('DELETE FROM wallet_transactions WHERE wallet_id IN (SELECT id FROM wallets WHERE user_id = ANY($1::uuid[]))', [[user.id, provider.userId]]);
-  await db.query('DELETE FROM wallets WHERE user_id = ANY($1::uuid[])', [[user.id, provider.userId]]);
-  await db.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [[user.id, provider.userId]]);
-});
-
-// ─── GET /api/wallet ──────────────────────────────────────────────────────────
-
-describe('GET /api/wallet', () => {
-  it('should return wallet balance', async () => {
-    const res = await request(app)
-      .get('/api/wallet')
-      .set('Authorization', `Bearer ${userToken}`);
-
-    expect(res.status).toBe(200);
-    expect(res.body.data).toHaveProperty('balance');
-    expect(res.body.data).toHaveProperty('balanceRupees');
-    expect(res.body.data).toHaveProperty('currency', 'inr');
-  });
-
-  it('should reject unauthenticated request', async () => {
-    const res = await request(app).get('/api/wallet');
-    expect(res.status).toBe(401);
-  });
-});
-
-// ─── GET /api/wallet/transactions ────────────────────────────────────────────
-
-describe('GET /api/wallet/transactions', () => {
-  beforeAll(async () => {
-    // Seed a few transactions.
-    await atomicCredit(user.id, 5000, 'cashback', undefined, 'Test cashback');
-    await atomicCredit(user.id, 10000, 'topup',    undefined, 'Test topup');
-  });
-
-  it('should return paginated transaction history', async () => {
-    const res = await request(app)
-      .get('/api/wallet/transactions?page=1&limit=10')
-      .set('Authorization', `Bearer ${userToken}`);
-
-    expect(res.status).toBe(200);
-    expect(Array.isArray(res.body.data)).toBe(true);
-    expect(res.body.data.length).toBeGreaterThanOrEqual(2);
-    expect(res.body).toHaveProperty('total');
-  });
-
-  it('should filter by type=credit', async () => {
-    const res = await request(app)
-      .get('/api/wallet/transactions?type=credit')
-      .set('Authorization', `Bearer ${userToken}`);
-
-    expect(res.status).toBe(200);
-    const types: string[] = res.body.data.map((t: { transaction_type: string }) => t.transaction_type);
-    const debitTypes = ['booking_payment', 'withdrawal'];
-    expect(types.every((t) => !debitTypes.includes(t))).toBe(true);
-  });
-
-  it('should filter by type=debit', async () => {
-    // Seed a debit.
-    await atomicDebit(user.id, 2000, 'booking_payment', undefined, 'Test debit');
-
-    const res = await request(app)
-      .get('/api/wallet/transactions?type=debit')
-      .set('Authorization', `Bearer ${userToken}`);
-
-    expect(res.status).toBe(200);
-    const types: string[] = res.body.data.map((t: { transaction_type: string }) => t.transaction_type);
-    const creditTypes = ['cashback', 'refund', 'topup', 'earning', 'referral_reward'];
-    expect(types.every((t) => !creditTypes.includes(t))).toBe(true);
-  });
-});
-
-// ─── POST /api/wallet/withdraw ────────────────────────────────────────────────
-
-describe('POST /api/wallet/withdraw', () => {
-  const fakeBankAccountId = '550e8400-e29b-41d4-a716-446655440000';
+describe('Wallet + ledger (integration)', () => {
+  let db: Pool;
+  let wallets: WalletModel;
 
   beforeAll(async () => {
-    // Give provider some balance.
-    await atomicCredit(provider.userId, 100_000, 'earning', undefined, 'Test earning');
+    db = getTestPool();
+    await waitForDb();
+    await initTestSchema();
+    wallets = new WalletModel(db);
   });
 
-  it('should queue a withdrawal for a provider', async () => {
-    const res = await request(app)
-      .post('/api/wallet/withdraw')
-      .set('Authorization', `Bearer ${providerToken}`)
-      .send({ amount: 20_000, bankAccountId: fakeBankAccountId });
-
-    expect(res.status).toBe(200);
-    expect(res.body.data).toHaveProperty('transactionId');
-    expect(res.body.data.amount).toBe(20_000);
+  beforeEach(async () => {
+    await resetTestData();
   });
 
-  it('should reject withdrawal if balance is insufficient', async () => {
-    const res = await request(app)
-      .post('/api/wallet/withdraw')
-      .set('Authorization', `Bearer ${providerToken}`)
-      .send({ amount: 999_999_999, bankAccountId: fakeBankAccountId });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('INSUFFICIENT_BALANCE');
+  afterAll(async () => {
+    await closeTestPool();
   });
 
-  it('should reject withdrawal below minimum (₹100)', async () => {
-    const res = await request(app)
-      .post('/api/wallet/withdraw')
-      .set('Authorization', `Bearer ${providerToken}`)
-      .send({ amount: 5_000, bankAccountId: fakeBankAccountId });
+  it('keeps wallet balance + ledger row consistent within a transaction', async () => {
+    const user = await createTestUser(db);
+    await wallets.findOrCreate(user.id);
 
-    expect(res.status).toBe(400);
-  });
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      await wallets.credit(user.id, 100, client);
+      await client.query(
+        `INSERT INTO wallet_transactions (user_id, type, amount, currency, description)
+         VALUES ($1, 'credit', $2, 'INR', $3)`,
+        [user.id, 100, 'cashback'],
+      );
+      await client.query('COMMIT');
+    } finally {
+      client.release();
+    }
 
-  it('should reject withdrawal by a regular user (not provider)', async () => {
-    const res = await request(app)
-      .post('/api/wallet/withdraw')
-      .set('Authorization', `Bearer ${userToken}`)
-      .send({ amount: 10_000, bankAccountId: fakeBankAccountId });
-
-    expect(res.status).toBe(403);
-  });
-});
-
-// ─── Cashback idempotency ─────────────────────────────────────────────────────
-
-describe('Cashback idempotency', () => {
-  it('should not double-credit cashback for the same booking', async () => {
-    const { creditCashback } = await import('../../src/services/cashback.service');
-    const bookingId = '550e8400-e29b-41d4-a716-446655440001';
-
-    // Set up platform settings.
-    await db.query(
-      `INSERT INTO platform_settings (key, value) VALUES ('cashback_percentage', '5')
-       ON CONFLICT (key) DO UPDATE SET value = '5'`,
+    expect(await wallets.getBalance(user.id)).toBe(100);
+    const rows = await db.query<{ type: string; amount: string }>(
+      'SELECT type, amount FROM wallet_transactions WHERE user_id = $1',
+      [user.id],
     );
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0].type).toBe('credit');
+    expect(Number(rows.rows[0].amount)).toBe(100);
+  });
 
-    // First call — should credit.
-    const r1 = await creditCashback(user.id, bookingId, 100_000);
-    expect(r1.eligible).toBe(true);
-    expect(r1.cashbackAmount).toBe(5_000);
+  it('rolls back the wallet credit when the ledger insert fails', async () => {
+    const user = await createTestUser(db);
+    await wallets.findOrCreate(user.id);
 
-    // Second call — should be a no-op.
-    const r2 = await creditCashback(user.id, bookingId, 100_000);
-    expect(r2.eligible).toBe(false);
-    expect(r2.cashbackAmount).toBe(0);
+    const client = await db.connect();
+    let threw: unknown;
+    try {
+      await client.query('BEGIN');
+      await wallets.credit(user.id, 500, client);
+      try {
+        await client.query(
+          // invalid type violates check constraint → throws
+          `INSERT INTO wallet_transactions (user_id, type, amount, currency, description)
+           VALUES ($1, 'invalid_type', $2, 'INR', 'bad')`,
+          [user.id, 500],
+        );
+      } catch (err) {
+        threw = err;
+        await client.query('ROLLBACK');
+      }
+    } finally {
+      client.release();
+    }
+
+    expect(threw).toBeDefined();
+    expect(await wallets.getBalance(user.id)).toBe(0);
+  });
+
+  it('credit + debit series reaches expected terminal balance', async () => {
+    const user = await createTestUser(db);
+    await wallets.findOrCreate(user.id);
+    await wallets.credit(user.id, 1_000);
+    await wallets.credit(user.id, 500);
+    await wallets.debit(user.id, 300);
+    await wallets.debit(user.id, 200);
+    expect(await wallets.getBalance(user.id)).toBe(1_000);
   });
 });

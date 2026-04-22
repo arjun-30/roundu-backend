@@ -1,20 +1,8 @@
-﻿// src/utils/response.ts
+// src/utils/response.ts
 // Owner: Lead
-// Thin wrappers so every controller returns the same envelope shape
+// Thin wrappers so every controller returns the same envelope shape.
 
-import { Response } from "express";
-
-export function ok(res: Response, data: unknown = null, message = "Success") {
-  return res.status(200).json({ success: true, data, message, error: null });
-}
-
-export function created(res: Response, data: unknown = null, message = "Created") {
-  return res.status(201).json({ success: true, data, message, error: null });
-}
-
-export function noContent(res: Response) {
-  return res.status(204).send();
-}import { Response } from 'express';
+import { Response } from 'express';
 
 export interface ApiResponse<T = unknown> {
   success: boolean;
@@ -23,13 +11,27 @@ export interface ApiResponse<T = unknown> {
   error: string | null;
 }
 
-export function success<T>(res: Response, data: T, message = 'Success'): Response {
+// ── 2xx helpers ──────────────────────────────────────────────────────────────
+
+export function ok<T = unknown>(res: Response, data: T = null as T, message = 'Success'): Response {
   return res.status(200).json({ success: true, data, message, error: null });
 }
 
-export function created<T>(res: Response, data: T, message = 'Created'): Response {
+export function created<T = unknown>(res: Response, data: T = null as T, message = 'Created'): Response {
   return res.status(201).json({ success: true, data, message, error: null });
 }
+
+export function noContent(res: Response): Response {
+  return res.status(204).send();
+}
+
+// ── Alias for controllers that were written against `sendSuccess` ────────────
+// Several controllers (referral, tracking, etc.) import `sendSuccess`; keep the
+// alias so existing code keeps working.
+export const sendSuccess = ok;
+export const success = ok;
+
+// ── Pagination ───────────────────────────────────────────────────────────────
 
 export interface PaginationMeta {
   currentPage: number;
@@ -45,7 +47,7 @@ export function paginated<T>(res: Response, data: T[], meta: PaginationMeta, mes
 }
 
 export function buildPaginationMeta(page: number, limit: number, totalCount: number): PaginationMeta {
-  const totalPages = Math.ceil(totalCount / limit);
+  const totalPages = limit > 0 ? Math.ceil(totalCount / limit) : 0;
   return {
     currentPage: page,
     totalPages,
