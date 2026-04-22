@@ -49,7 +49,7 @@ export async function updateLoc(
 ): Promise<void> {
   try {
     const providerId = req.user!.id;
-    const { sessionId } = req.params;
+    const sessionId = req.params.sessionId as string;
     const { lat, lng, accuracy } = req.body as {
       lat: number;
       lng: number;
@@ -72,7 +72,7 @@ export async function get(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const { sessionId } = req.params;
+    const sessionId = req.params.sessionId as string;
     const result = await getSession(getDb(req), sessionId);
     sendSuccess(res, result);
   } catch (err) {
@@ -90,7 +90,7 @@ export async function end(
 ): Promise<void> {
   try {
     const providerId = req.user!.id;
-    const { sessionId } = req.params;
+    const sessionId = req.params.sessionId as string;
     const result = await endSession(getDb(req), providerId, sessionId);
     sendSuccess(res, result, 'Tracking session ended');
   } catch (err) {

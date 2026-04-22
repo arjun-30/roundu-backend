@@ -1,0 +1,267 @@
+================================================================================
+ RoundU Backend — Test Run Results (develop branch)
+================================================================================
+ Branch:   develop
+ Command:  npx jest --verbose
+ Date:     2026-04-23
+ Runtime:  ~7.2 s
+================================================================================
+
+SUMMARY
+--------------------------------------------------------------------------------
+  Test Suites:  12 passed, 11 skipped  (23 total)
+  Tests:       122 PASSED, 49 skipped  (171 total)
+  Failures:      0
+  Snapshots:     0
+================================================================================
+
+
+DETAILED RESULTS PER SUITE
+================================================================================
+
+PASS __tests__/integration/tracking.integration.test.ts  [19/19 passed]
+  Tracking flow (integration)
+    POST /api/tracking/start
+      ✓ requires authentication (111 ms)
+      ✓ requires provider role (66 ms)
+      ✓ 400 for non-UUID bookingId (60 ms)
+      ✓ 404 when booking does not exist (61 ms)
+      ✓ 403 when booking belongs to another provider (72 ms)
+      ✓ 422 when booking status is not confirmed / in_progress (60 ms)
+      ✓ creates a tracking session for a confirmed booking (68 ms)
+      ✓ 409 when a second active session is started for the same booking (76 ms)
+    PATCH /api/tracking/:sessionId/location
+      ✓ persists location + updates last known location (88 ms)
+      ✓ emits provider:location_updated to booking room with correct payload (65 ms)
+      ✓ 400 for lat out of range (87 ms)
+      ✓ 403 when session belongs to a different provider (86 ms)
+      ✓ 404 for a non-existent session id (47 ms)
+    GET /api/tracking/:sessionId
+      ✓ returns session details in camelCase (75 ms)
+      ✓ 404 for unknown session (53 ms)
+    POST /api/tracking/:sessionId/end
+      ✓ ends an active session and returns summary (73 ms)
+      ✓ 403 when ended by a different provider (65 ms)
+      ✓ 400 on ending an already-ended session (64 ms)
+      ✓ 400 on location update after session ended (71 ms)
+
+PASS __tests__/integration/referral-flow.integration.test.ts  [14/14 passed]
+  Referral flow (integration)
+    GET /api/referrals/my-code
+      ✓ returns 401 without auth (57 ms)
+      ✓ lazily creates a referral code on first access (62 ms)
+      ✓ is idempotent — repeated calls return the same code (67 ms)
+      ✓ aggregates totalEarned across settled referrals (73 ms)
+    POST /api/referrals/apply
+      ✓ rejects missing code with VALIDATION_ERROR (62 ms)
+      ✓ rejects a code that does not exist (65 ms)
+      ✓ rejects self-referral (62 ms)
+      ✓ credits both wallets and marks referral settled on success (79 ms)
+      ✓ normalizes code to uppercase during validation (77 ms)
+      ✓ rejects duplicate application by the same user (85 ms)
+    GET /api/referrals/history
+      ✓ returns empty list when no referrals (68 ms)
+      ✓ paginates referrals by most-recent-first (97 ms)
+      ✓ caps limit at 50 (67 ms)
+      ✓ coerces invalid page numbers to 1 (53 ms)
+
+PASS __tests__/unit/cancellation-slabs.test.ts  [17/17 passed]
+  calculateRefund
+    ✓ returns 100% refund for >= 48h before service (5 ms)
+    ✓ returns 100% refund at exactly 48h (boundary)
+    ✓ returns 75% just under 48h
+    ✓ returns 75% refund for 24-48h (4 ms)
+    ✓ returns 50% refund for 12-24h
+    ✓ returns 25% refund for 6-12h (1 ms)
+    ✓ returns 10% refund for 3-6h
+    ✓ returns 0% refund when < 3h
+    ✓ returns 0% refund when cancelled after scheduled time
+    ✓ floors fractional refund paise (no rounding up) (4 ms)
+    ✓ conservation: refundAmount + deductedAmount == total for all slabs (1 ms)
+    ✓ accepts ISO strings for scheduled/cancelled (1 ms)
+    ✓ defaults cancelledAt to now when omitted
+  isRefundEligible
+    ✓ is true for cancellations >= 3h before service
+    ✓ is false for cancellations < 3h before service
+    ✓ is false when cancellation is after scheduled time
+
+PASS __tests__/unit/validators.test.ts  [14/14 passed]
+  applyReferralSchema
+    ✓ accepts a valid code and normalizes to uppercase (1 ms)
+    ✓ trims surrounding whitespace (1 ms)
+    ✓ rejects codes shorter than 4 chars (3 ms)
+    ✓ rejects codes longer than 20 chars (1 ms)
+    ✓ rejects missing code (1 ms)
+    ✓ rejects non-string code (1 ms)
+  startTrackingSchema
+    ✓ accepts a valid UUID bookingId
+    ✓ rejects a non-UUID bookingId (1 ms)
+  updateLocationSchema
+    ✓ accepts valid lat/lng (1 ms)
+    ✓ accepts optional accuracy
+    ✓ rejects lat > 90 (1 ms)
+    ✓ rejects lng < -180
+    ✓ rejects negative or zero accuracy (1 ms)
+    ✓ rejects non-UUID sessionId param (1 ms)
+
+PASS __tests__/unit/wallet.controller.test.ts  [10/10 passed]
+  WalletModel
+    ✓ findByUserId returns null when no wallet exists (52 ms)
+    ✓ create inserts a zero-balance wallet (56 ms)
+    ✓ findOrCreate is idempotent (56 ms)
+    ✓ credit increases balance (53 ms)
+    ✓ credit throws for a missing wallet (56 ms)
+    ✓ debit decreases balance when sufficient funds (63 ms)
+    ✓ debit throws on insufficient balance and leaves balance unchanged (73 ms)
+    ✓ debit exactly at balance succeeds (boundary) (51 ms)
+    ✓ getBalance returns 0 for a user with no wallet (46 ms)
+    ✓ concurrent debits: at least one rejects and balance never goes negative (61 ms)
+
+PASS __tests__/unit/response.test.ts  [10/10 passed]
+  response helpers
+    ✓ ok returns 200 with envelope (1 ms)
+    ✓ sendSuccess is an alias for ok
+    ✓ created returns 201 (1 ms)
+    ✓ noContent returns 204 with no body
+    ✓ paginated returns 200 with data + meta
+  buildPaginationMeta
+    ✓ computes totalPages via ceil
+    ✓ last page has hasNextPage=false and hasPrevPage=true (1 ms)
+    ✓ single page has both false
+    ✓ empty result: 0 pages
+    ✓ limit=0 guards against divide-by-zero
+
+PASS __tests__/unit/auth.middleware.test.ts  [9/9 passed]
+  authenticate
+    ✓ 401s when no Authorization header (4 ms)
+    ✓ 401s when header does not start with Bearer (3 ms)
+    ✓ 401s on invalid token (2 ms)
+    ✓ 401s on expired token (4 ms)
+    ✓ attaches req.user with both sub and id on valid token (4 ms)
+  requireRole / requireProvider / requireAdmin
+    ✓ requireProvider: 403 for user role (3 ms)
+    ✓ requireProvider: passes through provider (3 ms)
+    ✓ requireAdmin: 403 for provider role (2 ms)
+    ✓ requireRole accepts any listed role (10 ms)
+
+PASS __tests__/unit/jwt.test.ts  [9/9 passed]
+  jwt utility
+    access tokens
+      ✓ signs and verifies a valid access token (1 ms)
+      ✓ rejects a tampered token (3 ms)
+      ✓ rejects an access token verified as refresh (different secret) (2 ms)
+      ✓ rejects a token with the wrong audience (1 ms)
+      ✓ rejects a token with the wrong issuer (1 ms)
+    refresh tokens
+      ✓ signs and verifies a valid refresh token
+      ✓ refresh token fails verification with access verifier (1 ms)
+    decodeToken
+      ✓ returns payload without verifying signature (1 ms)
+      ✓ returns null for garbage input
+
+PASS __tests__/unit/referral.test.ts  [8/8 passed]
+  getOrCreateReferralCode
+    ✓ returns existing code + aggregated earnings (2 ms)
+    ✓ lazily creates a deterministic code when none exists (1 ms)
+    ✓ falls back to USER prefix when user row missing
+  applyReferralCode
+    ✓ rejects a non-existent code with INVALID_REFERRAL_CODE (1 ms)
+    ✓ rejects self-referral with SELF_REFERRAL (1 ms)
+    ✓ rejects duplicate application with CONFLICT
+    ✓ commits on success and credits both wallets (1 ms)
+  getReferralHistory
+    ✓ computes offset from page/limit and maps rows
+
+PASS __tests__/unit/errorHandler.test.ts  [7/7 passed]
+  Errors factory
+    ✓ produces AppError with the right status + code (1 ms)
+  errorHandler
+    ✓ serializes AppError (14 ms)
+    ✓ wraps ZodError as 400 VALIDATION_ERROR with details (3 ms)
+    ✓ maps Postgres 23505 to CONFLICT (3 ms)
+    ✓ maps Postgres 22P02 (invalid uuid) to 400 (2 ms)
+    ✓ unknown error -> 500 INTERNAL_ERROR (7 ms)
+  notFoundHandler
+    ✓ returns 404 for unmatched routes (3 ms)
+
+PASS __tests__/integration/wallet-cashback.integration.test.ts  [3/3 passed]
+  Wallet + ledger (integration)
+    ✓ keeps wallet balance + ledger row consistent within a transaction (63 ms)
+    ✓ rolls back the wallet credit when the ledger insert fails (56 ms)
+    ✓ credit + debit series reaches expected terminal balance (65 ms)
+
+PASS __tests__/socket/location-broadcast.test.ts  [3/3 passed]
+  tracking — location broadcast
+    ✓ emits provider:location_updated exactly once per update, to booking:<id> room (71 ms)
+    ✓ emits one event per call across multiple updates (72 ms)
+    ✓ does not emit when the session is owned by a different provider (54 ms)
+
+
+================================================================================
+SKIPPED TEST SUITES (11 suites, 49 TODO tests)
+================================================================================
+These cover modules that are still stubs or owned by other devs. The test
+files exist as describe.skip blocks documenting what to write once each
+module is implemented.
+
+SKIP __tests__/unit/cashback.test.ts              (5 todos)
+SKIP __tests__/unit/gps-analysis.test.ts          (4 todos)
+SKIP __tests__/unit/subscription-scheduler.test.ts (4 todos)
+SKIP __tests__/unit/vllm.service.test.ts          (4 todos)
+SKIP __tests__/integration/auth.integration.test.ts        (6 todos)
+SKIP __tests__/integration/booking-flow.integration.test.ts (6 todos)
+SKIP __tests__/integration/gps-alert.integration.test.ts    (3 todos)
+SKIP __tests__/integration/kyc-verification.integration.test.ts (4 todos)
+SKIP __tests__/integration/payment-stripe.integration.test.ts (5 todos)
+SKIP __tests__/integration/recommendation.integration.test.ts (4 todos)
+SKIP __tests__/integration/subscription-flow.integration.test.ts (4 todos)
+
+
+================================================================================
+FINAL COUNT
+================================================================================
+       PASSED:  122 tests
+      SKIPPED:   49 tests  (TODOs for unimplemented modules)
+       FAILED:    0 tests
+        TOTAL:  171 tests
+      RUNTIME:  ~7.2 seconds
+
+       npm test                  — all suites (122 passed)
+       npm run test:unit         — 83 passed, 17 skipped (~3.5 s)
+       npm run test:integration  — 36 passed, 32 skipped (~5.5 s)
+
+================================================================================
+BUGS FOUND + FIXED ALONG THE WAY (on develop branch)
+================================================================================
+1. src/utils/response.ts had two back-to-back modules stuck together, causing a
+   syntax error + duplicate `created` export. Merged into one module; added
+   `sendSuccess` alias (controllers were importing a name that didn't exist).
+2. src/routes/index.ts line 11 had `app.use(...)` at module top level
+   referencing undefined `app`. Replaced with a clean router registry mounting
+   all 20 routes.
+3. src/server.ts imported `connectDatabase` / `disconnectDatabase` from
+   config/database that never existed. Added both helpers.
+4. src/models/wallet.model.ts returned NUMERIC balances as strings (pg default)
+   despite `balance: number` declared type. Normalized via `Number()`.
+5. src/services/tracking.service.ts assertSessionOwner did `SELECT *`
+   (snake_case) then accessed `session.providerId` (camelCase) — always
+   undefined, so every updateLocation/endSession call returned 403. Fixed by
+   aliasing columns.
+6. src/controllers/tracking.controller.ts used `const { sessionId } =
+   req.params` — under @types/express 5 this is `string | string[]` and fails
+   strict typecheck. Cast to string.
+7. src/middleware/errorHandler.ts called `logger.error({ obj }, "msg")` (pino
+   style) but the logger is winston which wants `(msg, obj)`. Swapped args.
+8. src/middleware/errorHandler.ts regex `/^\d{5}$/` did not match Postgres
+   SQLSTATE 22P02 (has a letter). Broadened to `/^[0-9A-Z]{5}$/`.
+9. src/middleware/errorHandler.ts only recognized `AppError` instances;
+   services across the codebase throw plain `Error` objects with `statusCode`
+   and `code` attached via `Object.assign`. Now normalized into AppError.
+10. src/middleware/validate.ts called `schema.parseAsync(...)` but never wrote
+    the result back to req.body/params/query, so Zod transforms
+    (`.trim()`, `.toUpperCase()`, defaults) were silently dropped. Now applies
+    transformed values back onto the request.
+11. src/middleware/auth.ts attached `req.user` with shape `{ sub, role, phone }`
+    but every controller uses `req.user.id`. Added an `id` alias (= sub) in the
+    payload so old + new code shape both work.
+================================================================================

@@ -19,7 +19,17 @@ async function assertSessionOwner(
   providerId: string,
 ): Promise<TrackingSession> {
   const result = await db.query<TrackingSession>(
-    `SELECT * FROM tracking_sessions WHERE id = $1`,
+    `SELECT
+       id,
+       booking_id   AS "bookingId",
+       provider_id  AS "providerId",
+       status,
+       started_at   AS "startedAt",
+       ended_at     AS "endedAt",
+       last_lat     AS "lastLat",
+       last_lng     AS "lastLng",
+       last_updated_at AS "lastUpdatedAt"
+     FROM tracking_sessions WHERE id = $1`,
     [sessionId],
   );
 
